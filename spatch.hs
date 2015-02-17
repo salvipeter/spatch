@@ -126,7 +126,22 @@ samplePoints ps res = [0,0] : concat [loop i | i <- [1..res-1]]
           line i a b = [affinComb (beta j i) a b | j <- [1..i]]
 
 triangles :: Int -> Int -> [(Int,Int,Int)]
-triangles n res = undefined
+triangles n res = connectTriangles loops
+    where loops    = center : [loop i | i <- [1..res-1]]
+          center   = take n $ repeat [0]
+          loop i   = [line i j | j <- [0..n-1]]
+          line i j = if j == 0
+                     then to : [from..from+i-1]
+                     else [from+j*i-1..from+(j+1)*i-1]
+              where from = n * i * (i - 1) `div` 2 + 1
+                    to   = n * i * (i + 1) `div` 2
+
+connectTriangles :: [[[Int]]] -> [(Int,Int,Int)]
+connectTriangles [x]      = []
+connectTriangles (x:y:xs) = connect x y ++ connectTriangles (y:xs)
+    where connect x y  = concat $ zipWith connectLine x y
+          connectLine [x]        [y1,y2]    = [(x,y2,y1)]
+          connectLine (x1:x2:xs) (y1:y2:ys) = (x1,y2,y1):(y2,x1,x2):connectLine (x2:xs) (y2:ys)
 
 affinComb :: Double -> Point -> Point -> Point
 affinComb a p q = vplus p' q'
@@ -209,4 +224,4 @@ showTriangle :: (Int, Int, Int) -> String
 showTriangle (a,b,c) = show a ++ " " ++ show b ++ " " ++ show c
 
 -- >>> writeFile "/tmp/5sided-cubic-net.vtk" $ cpVTK 5 3
--- >>> writeFile "/tmp/5sided-cubic.vtk" $ surfVTK 5 3
+-- >>> writeFile "/tmp/5sided-cubic.vtk" $ surfVTK 5 3 50
