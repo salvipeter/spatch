@@ -7,19 +7,9 @@ type Index = [Int]
 count :: (a -> Bool) -> [a] -> Int
 count p = length . filter p
 
-sumlists :: Int -> [[Int]]
-sumlists 1 = [[1]]
-sumlists n = [n]:[k:xs | k <- [1..n-1], xs <- sumlists (n - k)]
-
-extensions :: Int -> [Int] -> [[Int]]
-extensions 0 [] = [[]]
-extensions 0 xs = []
-extensions n [] = map (0:) (extensions (n-1) [])
-extensions n xs = map (0:) (extensions (n-1) xs) ++
-                  map (head xs :) (extensions (n-1) (tail xs))
-
 indices :: Int -> Int -> [Index]
-indices n = concat . map (extensions n) . sumlists
+indices 1 d = [[d]]
+indices n d = [i:xs | i <- [0..d], xs <- indices (n-1) (d-i)]
 
 pairSums :: [Int] -> [Int]
 pairSums xs = map (uncurry (+)) $ zip ys (tail ys)
