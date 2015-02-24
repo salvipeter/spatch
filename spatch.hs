@@ -15,27 +15,32 @@ pairSums :: [Int] -> [Int]
 pairSums xs = map (uncurry (+)) $ zip ys (tail ys)
     where ys = xs ++ [head xs]
 
-isOuter :: Int -> Index -> Bool
-isOuter d = any (== d) . pairSums
+isOuter :: Index -> Bool
+isOuter xs = any (== d) $ pairSums xs
+    where d = sum xs
 
-isInner :: Int -> Index -> Bool
-isInner d xs = not (isOuter d xs) && any (isOuter d) (neighbors xs)
+isInner :: Index -> Bool
+isInner xs = not (isOuter xs) && any isOuter (neighbors xs)
 
-isTripleFrame :: Int -> Index -> Bool
-isTripleFrame d xs = count (>= d-1) sums > 2
+isCentral :: Index -> Bool
+isCentral xs = not (isOuter xs) && not (isInner xs)
+
+isTripleFrame :: Index -> Bool
+isTripleFrame xs = count (>= d-1) sums > 2
     where sums = pairSums xs
+          d    = sum xs
 
-outerIndices n d = filter (isOuter d) (indices n d)
-innerIndices n d = filter (isInner d) (indices n d)
+outerIndices n d = filter isOuter (indices n d)
+innerIndices n d = filter isInner (indices n d)
 centralIndices n d = (cp \\ ocp) \\ icp
     where cp  = indices n d
-          ocp = filter (isOuter d) cp
-          icp = filter (isInner d) cp
+          ocp = filter isOuter cp
+          icp = filter isInner cp
 
 numIndices n d = choose (n+d-1) (n-1)
 numInnerIndices n d = length (innerIndices n d) -- 2n(d-1)-n
 numCentralIndices n d = length (centralIndices n d)
-isDependent n d = any (isTripleFrame d) (indices n d)
+isDependent n d = any isTripleFrame (indices n d)
 
 allInfo n d | isDependent n d = (0,0,0)
             | otherwise       = (numIndices n d,
@@ -145,8 +150,7 @@ vmul :: Double -> Point -> Point
 vmul x a = map (* x) a
 
 eval :: Polygon -> [Index] -> [Point] -> Point -> Point
-eval ps is cps p = foldr1 vplus [vmul (bernstein i us) cp
-                                     | (cp,i) <- zip cps is]
+eval ps is cps p = foldr1 vplus [vmul (bernstein i us) cp | (cp,i) <- zip cps is]
     where us = barycentric ps p
 
 {- Test
@@ -181,8 +185,7 @@ cpVTK n d = "# vtk DataFile Version 1.0\n\
             \DATASET POLYDATA\n\
             \POINTS " ++ show (length cp) ++ " float\n" ++
             concat [showPoint p ++ "\n" | p <- cp] ++
-            "LINES " ++ show (length lines) ++ " " ++
-            show (3 * length lines) ++ "\n" ++
+            "LINES " ++ show (length lines) ++ " " ++ show (3 * length lines) ++ "\n" ++
             concat ["2 " ++ show a ++ " " ++ show b ++ "\n"| (a,b) <- lines]
     where cp    = cp3D n d
           is    = indices n d
@@ -204,8 +207,7 @@ surfVTK n d res = "# vtk DataFile Version 1.0\n\
                   \DATASET POLYDATA\n\
                   \POINTS " ++ show (length ps) ++ " float\n" ++
                   concat [showPoint p ++ "\n" | p <- ps] ++
-                  "POLYGONS " ++ show (length ts) ++ " " ++
-                  show (4 * length ts) ++ "\n" ++
+                  "POLYGONS " ++ show (length ts) ++ " " ++ show (4 * length ts) ++ "\n" ++
                   concat ["3 " ++ showTriangle t ++ "\n" | t <- ts]
     where ps = surf3D n d res
           ts = triangles n res
