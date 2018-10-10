@@ -153,7 +153,7 @@ eval :: Polygon -> [Index] -> [Point] -> Point -> Point
 eval ps is cps p = foldr1 vplus [vmul (bernstein i us) cp | (cp,i) <- zip cps is]
     where us = barycentric ps p
 
-{- Test
+{- Standard control point positions
 
 (X,Y) coordinates of the control points are defined as combinations
 of the domain polygon's vertices, e.g. [1,2,0,0,0] is the affine combination
@@ -164,12 +164,62 @@ Then the points are raised onto a paraboloid.
 -}
 
 cp3D :: Int -> Int -> [Point]
-cp3D n d = map cp (indices n d)
+cp3D n d = map cp (indices n d) -- ((outerIndices n d) ++ (innerIndices n d))
     where ps     = regularPolygon n
+          -- ps     = [[-1,1],[-1,-1],[1,-1],[1,-1/3],[-1/3,-1/3],[-1/3,1]]
+          -- ps     = [[-1,1],[-1,-1],[1,-1],[1,-1/3],[-1/3,-1/3],[-1/3,1/3],[1,1/3],[1,1]]
+          -- ps     = [[-1,1],[-1,-1],[1,-1],[1,-1/2],[-1/2,-1/2],[-1/2,1/2],[1,1/2],[1,1]]
+          -- ps     = [[-1,1],[-1,-1],[0,-1],[0,0],[-2/3,0],[-2/3,2/3],[1,2/3],[1,1]]
+          -- ps     = [[-1,7/8],[-1,-1],[1/8,-1],[0,-1/4],[-5/8,-3/8],[-1/2,1/2],[7/8,1/2],[3/4,1]]
           cp     = to3D . foldr1 vplus . wcp
           wcp xs = zipWith op (map fromIntegral xs) ps
           op a p = vmul (a / fromIntegral d) p
-          to3D [x,y] = [x,y,1.0-x*x-y*y]
+          to3D [x,y] = [x,y,0] --[x,y,1.0-x*x-y*y]
+
+{- Alternative method
+
+Given boundary vertices p_i, and inner boundary vertices q_i,
+the coordinates of a control point c_j having index j = {j1,...,jn}
+is defined as 1/d * sum j_i p_i + alpha / d * sum j_i (q_i - p_i),
+where alpha = (1 - dist(j)) / (1 - dist(k)),
+k being the index of an (arbitrary) inner boundary vertex,
+and dist() is the distance of the domain position from the origin.
+
+Note that this gives back the correct values for p_i and q_i.
+
+-}
+
+square :: Double -> Double
+square x = x * x
+
+norm2 :: [Double] -> Double
+norm2 = foldr1 (+) . map square
+
+isInnerCorner :: Index -> Bool
+isInnerCorner xs = zeroes == n - 3 && pat1n1 xs'
+    where n      = length xs
+          zeroes = length $ filter (== 0) xs
+          pat1n1 [_,_]     = False
+          pat1n1 (1:_:1:_) = True
+          pat1n1 (_:ys)    = pat1n1 ys
+          xs'    = xs ++ xs
+
+innerDistance :: Int -> Int -> Double
+innerDistance n d = norm2 (init cp)
+    where cp = snd $ head $ filter (isInnerCorner . fst) $ zip (indices n d) (cp3D n d)
+
+distance :: Index -> Double
+distance xs = norm2 (init cp)
+    where cp = snd $ head $ filter ((== xs) . fst) $ zip (indices n d) (cp3D n d)
+          n = length xs
+          d = sum xs
+
+deviationWeight :: Index -> Double
+deviationWeight xs = (1.0 - distance xs) / (1.0 - innerDistance n d)
+    where n = length xs
+          d = sum xs
+
+-- Tests
 
 surf3D :: Int -> Int -> Int -> [Point]
 surf3D n d res = map (eval ps is cp) xs
@@ -193,7 +243,7 @@ cpVTK n d = "# vtk DataFile Version 1.0\n\
 
 controlNet :: [Index] -> [(Int, Int)]
 controlNet is = filter (uncurry (<)) $ concat $ map op isid
-    where op i  = [(pos j, snd i) | j <- neighbors (fst i)]
+    where op i  = [(pos j, snd i) | j <- neighbors (fst i), any (== j) is]
           pos i = snd $ head $ dropWhile ((/= i) . fst) isid
           isid  = zip is [0..]
 
@@ -232,9 +282,30 @@ cpSKD n d = "; Sketches Data File\n\
             \[HISTORY]\n0 0\n\
             \[END]\n"
     where cp    = cp3D n d
-          is    = indices n d
+          -- is    = (indices n d)
+          is    = (outerIndices n d) ++ (innerIndices n d)
           lines = controlNet is
           scaled = map (100.0 *)
+
+showLine :: [Point] -> (Int, Int) -> String
+showLine cp (from, to) = "newpath\n" ++
+                         (showScaled from) ++ " moveto\n" ++
+                         (showScaled to) ++ " lineto\n" ++
+                         "stroke\n"
+    where showScaled = showPoint . scale . (cp !!)
+          scale      = map (\x -> x * 250.0 + 300.0)
+
+cpEPS :: Int -> Int -> String
+cpEPS n d = "%!PS-Adobe-2.0\n\
+            \%%BoundingBox: 0 0 600 600\n" ++
+            (concat $ map (showLine cp) lines) ++
+            concat [showPoint (scale p) ++ " 3 0 360 arc fill\n" | p <- cp] ++
+            "showpage\n"
+    where cp    = map init $ cp3D n d
+          is    = (indices n d)
+          -- is    = (outerIndices n d) ++ (innerIndices n d)
+          lines = controlNet is
+          scale = map (\x -> x * 250.0 + 300.0)
 
 surfVTK :: Int -> Int -> Int -> String
 surfVTK n d res = "# vtk DataFile Version 1.0\n\
@@ -253,3 +324,11 @@ showTriangle (a,b,c) = show a ++ " " ++ show b ++ " " ++ show c
 
 -- >>> writeFile "/tmp/5sided-cubic-net.vtk" $ cpVTK 5 3
 -- >>> writeFile "/tmp/5sided-cubic.vtk" $ surfVTK 5 3 50
+
+writeEPS = mapM_ out [(n,d) | n <- [8], d <- [1..5]]
+    where out (n,d) = writeFile (fname n d) (cpEPS n d)
+          fname n d = "/tmp/spatch-" ++ show n ++ "-" ++ show d ++ ".eps"
+
+main = mapM_ out [(n,d) | n <- [3..8], d <- [1..5]]
+    where out (n,d) = writeFile (fname n d) (cpSKD n d)
+          fname n d = "/tmp/spatch-" ++ show n ++ "-" ++ show d ++ ".skd"
